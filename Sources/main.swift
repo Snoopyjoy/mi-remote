@@ -101,11 +101,38 @@ func toggleCursorCodex() {
 // Both apps use Cmd+; to focus their chat input (user-configured in Codex,
 // accepted in Cursor). Power jumps to Codex' input; HOME jumps to Cursor's.
 
+// Focus keystroke per app, overridable via config.json "focusCombos"
+// (read on every press, so tweaks need no rebuild).
+func focusCombo(for bundle: String) -> Combo {
+    let defaults: [String: Combo] = [
+        cursorBundle: Combo(keycode: 37, flags: [.maskCommand]), // Cmd+L (user-verified in Cursor)
+        codexBundle: Combo(keycode: 41, flags: [.maskCommand]),  // Cmd+; (user-configured in Codex)
+    ]
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/mi-remote/config.json")
+    if let data = try? Data(contentsOf: url),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let all = json["focusCombos"] as? [String: Any],
+       let d = all[bundle] as? [String: Any], let kc = d["keycode"] as? Int {
+        var flags: CGEventFlags = []
+        for m in (d["modifiers"] as? [String]) ?? [] {
+            switch m.lowercased() {
+            case "command", "cmd": flags.insert(.maskCommand)
+            case "shift": flags.insert(.maskShift)
+            case "option", "alt": flags.insert(.maskAlternate)
+            case "control", "ctrl": flags.insert(.maskControl)
+            default: break
+            }
+        }
+        return Combo(keycode: CGKeyCode(kc), flags: flags)
+    }
+    return defaults[bundle] ?? Combo(keycode: 41, flags: [.maskCommand])
+}
+
 func focusAppInput(bundle: String, path: String, label: String) {
     activate(bundleID: bundle, path: path)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-        sendCombo(Combo(keycode: 41, flags: [.maskCommand])) // Cmd+;
-        log("focus \(label) input (Cmd+;)")
+        sendCombo(focusCombo(for: bundle))
+        log("focus \(label) input")
     }
 }
 func focusCursorInput() { focusAppInput(bundle: cursorBundle, path: cursorPath, label: "Cursor") }
