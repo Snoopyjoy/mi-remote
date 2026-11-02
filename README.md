@@ -1,12 +1,17 @@
 # mi-remote v2.0
 
-把**小米蓝牙语音遥控器 2 / 2 Pro**（`0x2717 / 0x32B8`，固件 `2671`）变成 Mac 上控制 **Cursor Agent** 与 **Codex 桌面 App** 的全功能单手控制器。
+**把几十元的小米蓝牙语音遥控器 2 / 2 Pro，变成 macOS 上单手盲操 Cursor Agent 与 Codex 的语音编码仙女棒。**
 
-灵感来自 [fanxeon/mi-ao](https://github.com/fanxeon/mi-ao)，结合遥控器实物分区与图标语义，实现了**双控制模式（⌨️ 方向键 ↔ 🖱 鼠标指针）** + **多手势分层（单击 / 双击 / 长按 / 组合滚屏）** + **豆包输入法语音直通** + **屏幕毛玻璃 HUD 浮层与菜单栏指示**。
+- 📖 **完整技术复刻与踩坑指南（可分享长文）**：[**`docs/GUIDE.md`**](docs/GUIDE.md)
+- 💡 **致谢与对比**：灵感源自 [fanxeon/mi-ao](https://github.com/fanxeon/mi-ao)。区别在于本方案走 **「纯 BLE HID 硬件层精准接管 + 豆包输入法语音直通 + Cursor/Codex 双端适配」** 路线，零外部依赖（单文件 ~450 行原生 Swift），且将全部 13 个实体按键通过「单击 / 双击 / 长按 / 组合键」四层手势 +「⌨️ 方向键 ↔ 🖱 60fps 鼠标指针」双模式 100% 利用起来。
+
+<p align="center">
+  <img src="docs/assets/xiaomi-remote-2.jpg" width="280" alt="小米蓝牙语音遥控器 2 实物图">
+</p>
 
 ---
 
-## 实物分区与按键全表
+## 实物分区与按键速查表
 
 ```text
         ┌─────────────────────────┐
@@ -26,7 +31,7 @@
 ```
 
 | 分区 | 实体按键 | Usage | 单击 (Tap) | 双击 (≤260ms) | 长按 / 按住 (≥360ms) |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | **顶部右** | **`🎤` 麦克风** | `0x3E` | — | — | **按住说话、松手上屏**（`Option+F5` 触发豆包输入法听写） |
 | **顶部左** | **`⏻` 红电源** | `0x66` | **`Esc`**（中断生成 / 关弹窗 / 取消） | **连发 `Esc × 2`** | **`⌃C + Esc` 强制中断** |
 | **圆环** | **`↑ ↓ ← →`** | `0x52` `0x51` `0x50` `0x4F` | **⌨️ 方向模式**：上下左右方向键<br>**🖱 鼠标模式**：精准微移指针 | — | **⌨️ 方向模式**：按住连发方向键<br>**🖱 鼠标模式**：60fps 渐进加速移鼠（支持斜向双键同按） |
@@ -39,25 +44,37 @@
 
 ---
 
-## 架构原理（对标并精简自 `mi-ao`）
+## 3 分钟快速开始
 
-1. **硬件层精准隔离（`hidutil` `No Event`）**：
-   借鉴 `mi-ao` 的做法，守护进程通过 `hidutil property --matching '{"VendorID":10007,"ProductID":12984}'` 将除语音键外的 **12 个实体键全部映射到 `0x700000000`（`No Event`）**，彻底屏蔽遥控器原生的锁屏、调音量、反引号等系统副作用；仅语音键 `0x3E` 映射为 `0xE6`（右 Option，系统收到 `Option+F5` 交给豆包输入法）。
-2. **设备独占监听（`IOHIDManager`）**：
-   守护进程在 `IOHIDManager` 层精确匹配 `VendorID: 0x2717, ProductID: 0x32B8` 接收每个按键的按下（`value=1`）与松开（`value=0`），**完全不挂全局键盘钩子，0% 干扰 Mac 实体键盘**。
-3. **多手势状态机 + 60Hz 指针/连发引擎 + HUD 浮层**：
-   状态栏常驻 `⌨️` / `🖱` 图标，模式切换与进阶手势触发时在屏幕底部弹出毛玻璃非抢焦点 HUD 提示。
+1. **蓝牙配对**：同时长按遥控器 `<` + `⌂` 5 秒进入配对，在 macOS 蓝牙设置中连接 `小米蓝牙语音遥控器`。
+2. **构建安装**：
+   ```bash
+   ./install.sh
+   ```
+3. **系统授权**：在「系统设置 → 隐私与安全性」的 **辅助功能** 与 **输入监控** 中添加并开启 `~/Applications/MiRemote.app`，然后执行：
+   ```bash
+   launchctl kickstart -k gui/$(id -u)/com.miremote.daemon
+   ```
+4. **绑定语音与聚焦快捷键**：
+   - 在**豆包输入法**设置中，将语音快捷键自定义录制为按一下遥控器 `🎤` 语音键（即 `Option+F5`），模式选「长按」。
+   - 在 **Codex** 快捷键设置中，将「聚焦主聊天输入框」设为 `⌘;`（Cursor 默认使用 `⌘L`）。
 
 ---
 
-## 安装与更新
+## 仓库目录结构
 
-```bash
-./install.sh
+```text
+mi-remote/
+├── Sources/
+│   └── main.swift          # 核心守护进程（hidutil 隔离 + IOHIDManager + 手势引擎 + HUD + 状态栏）
+├── scripts/
+│   └── probe-hid.swift     # 独立硬件 HID 键码探测工具（swift scripts/probe-hid.swift）
+├── docs/
+│   ├── GUIDE.md            # 可复刻、可分享的完整技术方案与六大踩坑实录
+│   └── assets/
+│       └── xiaomi-remote-2.jpg
+├── build.sh                # 编译并打包签名 MiRemote.app
+├── install.sh              # 安装到 ~/Applications + 生成默认配置 + 注册 LaunchAgent
+├── uninstall.sh            # 一键停止服务、清理文件并恢复遥控器出厂映射
+└── README.md
 ```
-
-首次安装或重编译后，在 **系统设置 → 隐私与安全性** 中确认两项权限指向 `~/Applications/MiRemote.app`：
-- **辅助功能 (Accessibility)**
-- **输入监控 (Input Monitoring)**
-
-日常修改快捷键只需编辑 `~/.config/mi-remote/config.json`，点击菜单栏 `⌨️/🖱` 图标 →「重新加载配置」即可生效，**无需重编译、无需重新授权**。
