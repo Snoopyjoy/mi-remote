@@ -248,8 +248,10 @@ func startTap() {
 // key event, so hidutil remapping can never rescue it. Listen at the HID layer
 // and synthesize Backspace (keycode 51) instead. The original event is dropped
 // by the system anyway, so no seizing/suppression is needed.
+var hidManager: IOHIDManager? // must outlive startHIDListener(); a local gets ARC-released and callbacks stop
 func startHIDListener() {
     let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    hidManager = manager
     IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: 0x2717, kIOHIDProductIDKey: 0x32B8] as CFDictionary)
     let cb: IOHIDValueCallback = { _, _, _, value in
         let el = IOHIDValueGetElement(value)
