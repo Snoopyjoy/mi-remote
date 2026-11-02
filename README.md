@@ -20,10 +20,10 @@ BLE ATVV 协议 + 本地 Whisper，本项目走「遥控器本来就是一台 BL
 | 方向 上/下/左/右 | 方向键（原生） | HID 原生 |
 | 确认 | Return（原生） | HID 原生 |
 | 返回 | Delete（⌫，删前一个字） | 守护进程 HID 层合成（该键 Usage `0xF1` 非标准、系统直接丢弃，hidutil 无效） |
-| HOME | 跳到 Cursor 并聚焦 Agent 输入框（激活 Cursor + `⌘L`） | hidutil → F20 + 守护进程 |
+| HOME | 跳到 Cursor 并聚焦对话输入框（激活 Cursor + `⌘;`） | hidutil → F20 + 守护进程 |
 | 语音（按住） | 豆包听写：按住说话、松手上屏 | hidutil 映射为右 Option（系统实收 `Option+F5`），在豆包里把该组合录为自定义语音快捷键 |
 | TV | 在 Cursor ↔ Codex 间切换聚焦（缺失则启动） | hidutil → F16 + 守护进程 |
-| 电源 | 跳到 Codex 并聚焦主聊天输入框（AX 定位输入框，兜底点击窗口底部） | hidutil → F17 + 守护进程 |
+| 电源 | 跳到 Codex 并聚焦主聊天输入框（激活 Codex + `⌘;`，需在 Codex 设置中把聚焦输入框快捷键设为 `⌘;`） | hidutil → F17 + 守护进程 |
 | 音量 + / − | 下一个 / 上一个会话（Cursor：模拟「按住 `⌘⌥`+方向、松开提交」的切换器手势；Codex：`⌘⌥←/→`，均已真机验证） | hidutil → F18/F19 + 守护进程 |
 | 菜单 | 系统原生（应用菜单键） | HID 原生 |
 

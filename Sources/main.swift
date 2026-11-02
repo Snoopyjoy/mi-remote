@@ -98,77 +98,18 @@ func toggleCursorCodex() {
 
 
 // MARK: - Focus-input actions
+// Both apps use Cmd+; to focus their chat input (user-configured in Codex,
+// accepted in Cursor). Power jumps to Codex' input; HOME jumps to Cursor's.
 
-func focusCursorInput() {
-    activate(bundleID: cursorBundle, path: cursorPath)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-        sendCombo(Combo(keycode: 37, flags: [.maskCommand])) // Cmd+L (user-verified in Cursor)
-        log("focus Cursor input (Cmd+L)")
+func focusAppInput(bundle: String, path: String, label: String) {
+    activate(bundleID: bundle, path: path)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        sendCombo(Combo(keycode: 41, flags: [.maskCommand])) // Cmd+;
+        log("focus \(label) input (Cmd+;)")
     }
 }
-
-func axAttr(_ el: AXUIElement, _ attr: String) -> AnyObject? {
-    var v: AnyObject?
-    return AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success ? v : nil
-}
-func axPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
-    guard let v = axAttr(el, attr), CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
-    var pt = CGPoint.zero; AXValueGetValue(v as! AXValue, .cgPoint, &pt); return pt
-}
-func axSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
-    guard let v = axAttr(el, attr), CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
-    var sz = CGSize.zero; AXValueGetValue(v as! AXValue, .cgSize, &sz); return sz
-}
-
-// Find the chat input via Accessibility and focus it; fall back to clicking the
-// bottom-center of the front window (where chat inputs live in these apps).
-func axFocusTextInput(pid: pid_t) -> Bool {
-    let appEl = AXUIElementCreateApplication(pid)
-    var queue: [AXUIElement] = [appEl]
-    var best: AXUIElement?; var bestScore = -CGFloat.greatestFiniteMagnitude
-    var visited = 0
-    while !queue.isEmpty && visited < 600 {
-        let el = queue.removeFirst(); visited += 1
-        if let role = axAttr(el, kAXRoleAttribute) as? String,
-           role == kAXTextAreaRole || role == kAXTextFieldRole || role == "AXTextArea" {
-            let pos = axPoint(el, kAXPositionAttribute) ?? .zero
-            let size = axSize(el, kAXSizeAttribute) ?? .zero
-            if size.width > 80 { // chat inputs are wide; score by width + how low on screen
-                let score = size.width + pos.y
-                if score > bestScore { bestScore = score; best = el }
-            }
-        }
-        if let kids = axAttr(el, kAXChildrenAttribute) as? [AXUIElement] { queue.append(contentsOf: kids) }
-    }
-    if let best {
-        AXUIElementSetAttributeValue(best, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        log("AX focused Codex text input")
-        return true
-    }
-    // Fallback: click bottom-center of the front window, then restore pointer.
-    if let win = axAttr(appEl, kAXFocusedWindowAttribute) as! AXUIElement?,
-       let pos = axPoint(win, kAXPositionAttribute), let size = axSize(win, kAXSizeAttribute) {
-        let saved = CGEvent(source: nil)?.location ?? .zero
-        let target = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height - 70)
-        for (type, t) in [(CGEventType.leftMouseDown, target), (CGEventType.leftMouseUp, target)] {
-            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: t, mouseButton: .left)?.post(tap: .cghidEventTap)
-        }
-        CGWarpMouseCursorPosition(saved)
-        log("AX input not found; fallback click at window bottom")
-        return true
-    }
-    log("AX focus failed: no window")
-    return false
-}
-
-func focusCodexInput() {
-    activate(bundleID: codexBundle, path: codexPath)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == codexBundle }) {
-            _ = axFocusTextInput(pid: app.processIdentifier)
-        }
-    }
-}
+func focusCursorInput() { focusAppInput(bundle: cursorBundle, path: cursorPath, label: "Cursor") }
+func focusCodexInput() { focusAppInput(bundle: codexBundle, path: codexPath, label: "Codex") }
 
 // MARK: - Synthetic keystrokes
 
