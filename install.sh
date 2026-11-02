@@ -20,17 +20,21 @@ cat > "$PLIST" <<PLIST
   <key>StandardErrorPath</key><string>$HOME/Library/Logs/mi-remote.log</string>
 </dict></plist>
 PLIST
-launchctl bootout "gui/$(id -u)/com.miremote.daemon" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
-echo "Installed. Now grant: System Settings > Privacy & Security > Accessibility > add ~/Applications/MiRemote.app (and Input Monitoring if asked)."
-echo "Log: ~/Library/Logs/mi-remote.log"
 
-# Session-switch combos (live-verified); only written when absent so user edits survive.
 mkdir -p ~/.config/mi-remote
 if [ ! -f ~/.config/mi-remote/config.json ]; then
   cat > ~/.config/mi-remote/config.json <<'JSON'
 {
-  "hidMapping": [["0x35","0x6B"],["0x4A","0x6F"],["0x66","0x6C"],["0x80","0x6D"],["0x81","0x6E"],["0x3E","0xE6"]],
+  "doubleClickMs": 260,
+  "longPressMs": 360,
+  "focusCombos": {
+    "com.todesktop.230313mzl4w4u92": {"keycode": 37, "modifiers": ["command"]},
+    "com.openai.codex": {"keycode": 41, "modifiers": ["command"]}
+  },
+  "newChatCombos": {
+    "com.todesktop.230313mzl4w4u92": {"keycode": 45, "modifiers": ["command"]},
+    "com.openai.codex": {"keycode": 45, "modifiers": ["command"]}
+  },
   "sessionCombos": {
     "com.openai.codex": {
       "prev": {"keycode": 124, "modifiers": ["command", "option"]},
@@ -41,3 +45,8 @@ if [ ! -f ~/.config/mi-remote/config.json ]; then
 JSON
   echo "Wrote ~/.config/mi-remote/config.json"
 fi
+
+launchctl bootout "gui/$(id -u)/com.miremote.daemon" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST"
+echo "Installed. Grant Accessibility + Input Monitoring to ~/Applications/MiRemote.app if needed."
+echo "Log: ~/Library/Logs/mi-remote.log"

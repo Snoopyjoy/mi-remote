@@ -14,8 +14,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>MiRemote</string>
   <key>CFBundleExecutable</key><string>MiRemote</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>LSBackgroundOnly</key><true/>
+  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>LSUIElement</key><true/>
   <key>NSBluetoothAlwaysUsageDescription</key><string>MiRemote only remaps the already-paired Xiaomi remote.</string>
 </dict></plist>
 PLIST
