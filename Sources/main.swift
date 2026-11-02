@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import IOKit.hid
 
 // mi-remote: Xiaomi Bluetooth Remote (VID 0x2717 / PID 0x32B8, FW 2671) -> Cursor / Codex controller.
 //
@@ -47,7 +48,6 @@ func configHidPairs() -> [(UInt64, UInt64)]? {
 func applyHidutilMapping() {
     func u(_ x: UInt64) -> UInt64 { (0x07 << 32) | x }
     let pairs: [(UInt64, UInt64)] = configHidPairs() ?? [
-        (0xF1, 0x2A), // Back  -> Delete (Backspace)
         (0x35, 0x6B), // TV    -> F16 (no native macOS function; daemon marker)
         (0x4A, 0x4E), // Home  -> PageDown
         (0x66, 0x6C), // Power -> F17 (daemon marker)
@@ -242,6 +242,33 @@ func startTap() {
     log("event tap ready")
 }
 
+
+// MARK: - HID layer for the Back key
+// Back reports usage 0xF1, a non-standard usage macOS drops before it becomes a
+// key event, so hidutil remapping can never rescue it. Listen at the HID layer
+// and synthesize Backspace (keycode 51) instead. The original event is dropped
+// by the system anyway, so no seizing/suppression is needed.
+func startHIDListener() {
+    let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: 0x2717, kIOHIDProductIDKey: 0x32B8] as CFDictionary)
+    let cb: IOHIDValueCallback = { _, _, _, value in
+        let el = IOHIDValueGetElement(value)
+        guard IOHIDElementGetUsagePage(el) == 7, IOHIDElementGetUsage(el) == 0xF1 else { return }
+        if IOHIDValueGetIntegerValue(value) == 1 {
+            sendCombo(Combo(keycode: 51, flags: [])) // Backspace
+            log("back -> Backspace")
+        }
+    }
+    IOHIDManagerRegisterInputValueCallback(manager, cb, nil)
+    IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+    let ret = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+    if ret != kIOReturnSuccess {
+        log("HID listener failed ret=\(ret): grant Input Monitoring to MiRemote.app, then relaunch")
+    } else {
+        log("HID listener ready (Back key)")
+    }
+}
+
 // MARK: - Main
 
 log("starting (pid \(ProcessInfo.processInfo.processIdentifier))")
@@ -253,4 +280,5 @@ applyHidutilMapping()
 // Re-apply on a timer: hidutil per-device mapping resets when the remote reconnects / Mac reboots.
 Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { _ in applyHidutilMapping() }
 startTap()
+startHIDListener()
 NSApplication.shared.run()
