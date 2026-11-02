@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 mkdir -p ~/Applications ~/Library/LaunchAgents
 rm -rf ~/Applications/MiRemote.app
 cp -R dist/MiRemote.app ~/Applications/MiRemote.app
+rm -rf dist/MiRemote.app # keep exactly one MiRemote.app on disk to avoid picking the wrong one in TCC dialogs
 PLIST=~/Library/LaunchAgents/com.miremote.daemon.plist
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
