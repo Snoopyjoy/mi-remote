@@ -189,7 +189,7 @@
 在终端执行：
 
 ```bash
-git clone <本仓库地址> ~/projects/mi-remote
+git clone https://github.com/Snoopyjoy/mi-remote.git ~/projects/mi-remote
 cd ~/projects/mi-remote
 ./install.sh
 ```
