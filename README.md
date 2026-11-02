@@ -19,7 +19,7 @@ BLE ATVV 协议 + 本地 Whisper，本项目走「遥控器本来就是一台 BL
 | --- | --- | --- |
 | 方向 上/下/左/右 | 方向键（原生） | HID 原生 |
 | 确认 | Return（原生） | HID 原生 |
-| 返回 | Escape | hidutil 重映射 |
+| 返回 | Delete（⌫，删前一个字） | hidutil 重映射 |
 | HOME | Page Down | hidutil 重映射 |
 | 语音（按住） | 豆包听写：按住说话、松手上屏 | hidutil 映射为右 Option（系统实收 `Option+F5`），在豆包里把该组合录为自定义语音快捷键 |
 | TV | 在 Cursor ↔ Codex 间切换聚焦（缺失则启动） | hidutil → F16 + 守护进程 |

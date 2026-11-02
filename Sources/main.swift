@@ -5,7 +5,7 @@ import AppKit
 // mi-remote: Xiaomi Bluetooth Remote (VID 0x2717 / PID 0x32B8, FW 2671) -> Cursor / Codex controller.
 //
 // Layer 1 (hidutil, applied by this daemon): per-device key translation
-//   Back 0xF1 -> Esc | Home 0x4A -> PageDown | TV 0x35 -> F6 | Power 0x66 -> F13
+//   Back 0xF1 -> Delete | Home 0x4A -> PageDown | TV 0x35 -> F16 | Power 0x66 -> F17
 //   Vol+ 0x80 -> F14 | Vol- 0x81 -> F15 | Voice 0x3E -> RightOption (system sees Option+F5,
 //   which Doubao IME records as its hold-to-talk custom shortcut)
 // Layer 2 (this daemon, CGEventTap): intercepts F6/F13/F14/F15 and performs app/session actions.
@@ -25,10 +25,29 @@ var logFile: FileHandle? = {
 
 // MARK: - Layer 1: hidutil mapping
 
+// HID pairs are re-read from ~/.config/mi-remote/config.json ("hidMapping": [[src,dst],...],
+// usages as decimal or "0x.." strings) on every apply, so key remaps need no rebuild.
+func configHidPairs() -> [(UInt64, UInt64)]? {
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/mi-remote/config.json")
+    guard let data = try? Data(contentsOf: url),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let arr = json["hidMapping"] as? [Any], !arr.isEmpty else { return nil }
+    func num(_ v: Any) -> UInt64? {
+        if let n = v as? NSNumber { return n.uint64Value }
+        if let str = v as? String { return UInt64(str.hasPrefix("0x") ? String(str.dropFirst(2)) : str, radix: str.hasPrefix("0x") ? 16 : 10) }
+        return nil
+    }
+    let pairs: [(UInt64, UInt64)] = arr.compactMap { item in
+        guard let a = item as? [Any], a.count == 2, let src = num(a[0]), let dst = num(a[1]) else { return nil }
+        return (src, dst)
+    }
+    return pairs.isEmpty ? nil : pairs
+}
+
 func applyHidutilMapping() {
     func u(_ x: UInt64) -> UInt64 { (0x07 << 32) | x }
-    let pairs: [(UInt64, UInt64)] = [
-        (0xF1, 0x29), // Back  -> Escape
+    let pairs: [(UInt64, UInt64)] = configHidPairs() ?? [
+        (0xF1, 0x2A), // Back  -> Delete (Backspace)
         (0x35, 0x6B), // TV    -> F16 (no native macOS function; daemon marker)
         (0x4A, 0x4E), // Home  -> PageDown
         (0x66, 0x6C), // Power -> F17 (daemon marker)
