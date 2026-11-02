@@ -49,7 +49,7 @@ func applyHidutilMapping() {
     func u(_ x: UInt64) -> UInt64 { (0x07 << 32) | x }
     let pairs: [(UInt64, UInt64)] = configHidPairs() ?? [
         (0x35, 0x6B), // TV    -> F16 (no native macOS function; daemon marker)
-        (0x4A, 0x4E), // Home  -> PageDown
+        (0x4A, 0x6F), // Home  -> F20 (daemon marker: focus Cursor input)
         (0x66, 0x6C), // Power -> F17 (daemon marker)
         (0x80, 0x6D), // Vol+  -> F18 (daemon marker)
         (0x81, 0x6E), // Vol-  -> F19 (daemon marker)
@@ -94,6 +94,80 @@ func toggleCursorCodex() {
     else { target = lastPairTarget }
     lastPairTarget = (target == cursorBundle) ? codexBundle : cursorBundle
     activate(bundleID: target, path: target == cursorBundle ? cursorPath : codexPath)
+}
+
+
+// MARK: - Focus-input actions
+
+func focusCursorInput() {
+    activate(bundleID: cursorBundle, path: cursorPath)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        sendCombo(Combo(keycode: 37, flags: [.maskCommand])) // Cmd+L (user-verified in Cursor)
+        log("focus Cursor input (Cmd+L)")
+    }
+}
+
+func axAttr(_ el: AXUIElement, _ attr: String) -> AnyObject? {
+    var v: AnyObject?
+    return AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success ? v : nil
+}
+func axPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
+    guard let v = axAttr(el, attr), CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+    var pt = CGPoint.zero; AXValueGetValue(v as! AXValue, .cgPoint, &pt); return pt
+}
+func axSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
+    guard let v = axAttr(el, attr), CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+    var sz = CGSize.zero; AXValueGetValue(v as! AXValue, .cgSize, &sz); return sz
+}
+
+// Find the chat input via Accessibility and focus it; fall back to clicking the
+// bottom-center of the front window (where chat inputs live in these apps).
+func axFocusTextInput(pid: pid_t) -> Bool {
+    let appEl = AXUIElementCreateApplication(pid)
+    var queue: [AXUIElement] = [appEl]
+    var best: AXUIElement?; var bestScore = -CGFloat.greatestFiniteMagnitude
+    var visited = 0
+    while !queue.isEmpty && visited < 600 {
+        let el = queue.removeFirst(); visited += 1
+        if let role = axAttr(el, kAXRoleAttribute) as? String,
+           role == kAXTextAreaRole || role == kAXTextFieldRole || role == "AXTextArea" {
+            let pos = axPoint(el, kAXPositionAttribute) ?? .zero
+            let size = axSize(el, kAXSizeAttribute) ?? .zero
+            if size.width > 80 { // chat inputs are wide; score by width + how low on screen
+                let score = size.width + pos.y
+                if score > bestScore { bestScore = score; best = el }
+            }
+        }
+        if let kids = axAttr(el, kAXChildrenAttribute) as? [AXUIElement] { queue.append(contentsOf: kids) }
+    }
+    if let best {
+        AXUIElementSetAttributeValue(best, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        log("AX focused Codex text input")
+        return true
+    }
+    // Fallback: click bottom-center of the front window, then restore pointer.
+    if let win = axAttr(appEl, kAXFocusedWindowAttribute) as! AXUIElement?,
+       let pos = axPoint(win, kAXPositionAttribute), let size = axSize(win, kAXSizeAttribute) {
+        let saved = CGEvent(source: nil)?.location ?? .zero
+        let target = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height - 70)
+        for (type, t) in [(CGEventType.leftMouseDown, target), (CGEventType.leftMouseUp, target)] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: t, mouseButton: .left)?.post(tap: .cghidEventTap)
+        }
+        CGWarpMouseCursorPosition(saved)
+        log("AX input not found; fallback click at window bottom")
+        return true
+    }
+    log("AX focus failed: no window")
+    return false
+}
+
+func focusCodexInput() {
+    activate(bundleID: codexBundle, path: codexPath)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == codexBundle }) {
+            _ = axFocusTextInput(pid: app.processIdentifier)
+        }
+    }
 }
 
 // MARK: - Synthetic keystrokes
@@ -197,7 +271,7 @@ func sessionSwitch(next: Bool) {
 
 // MARK: - Layer 2: event tap
 
-let kF6: CGKeyCode = 106, kF13: CGKeyCode = 64, kF14: CGKeyCode = 79, kF15: CGKeyCode = 80 // F16,F17,F18,F19
+let kF6: CGKeyCode = 106, kF13: CGKeyCode = 64, kF14: CGKeyCode = 79, kF15: CGKeyCode = 80, kF20: CGKeyCode = 90 // F16,F17,F18,F19,F20
 
 func handleKey(keycode: CGKeyCode, flags: CGEventFlags) -> Bool {
     // F-key events also carry Fn / nonCoalesced / numericPad bits; only real modifiers disqualify.
@@ -205,7 +279,8 @@ func handleKey(keycode: CGKeyCode, flags: CGEventFlags) -> Bool {
     guard flags.intersection(mods).isEmpty else { return false }
     switch keycode {
     case kF6: toggleCursorCodex(); return true
-    case kF13: activate(bundleID: codexBundle, path: codexPath); return true
+    case kF13: focusCodexInput(); return true
+    case kF20: focusCursorInput(); return true
     case kF14: sessionSwitch(next: true); return true
     case kF15: sessionSwitch(next: false); return true
     default: return false
@@ -220,14 +295,14 @@ func startTap() {
                 return Unmanaged.passUnretained(event)
             }
             let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-            if [kF6, kF13, kF14, kF15].contains(kc) {
+            if [kF6, kF13, kF14, kF15, kF20].contains(kc) {
                 log("tap saw marker keycode=\(kc) type=\(type.rawValue) flags=\(event.flags.rawValue)")
             }
             // Only swallow the keyDown; matching keyUp of an intercepted key is also swallowed
             // by re-checking handleKey would re-trigger actions, so track via keyUp pass for our keys:
             if type == .keyDown {
                 if handleKey(keycode: kc, flags: event.flags) { return nil }
-            } else if type == .keyUp, [kF6, kF13, kF14, kF15].contains(kc) {
+            } else if type == .keyUp, [kF6, kF13, kF14, kF15, kF20].contains(kc) {
                 let mods: CGEventFlags = [.maskCommand, .maskShift, .maskAlternate, .maskControl, .maskAlphaShift]
                 if event.flags.intersection(mods).isEmpty { return nil }
             }
